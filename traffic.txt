@@ -1,0 +1,139 @@
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from PIL import Image
+import os
+from sklearn.model_selection import train_test_split 
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPool2D, Dense, Flatten, Dropout
+import matplotlib.pyplot as plt
+import plotly.express as px
+import random
+
+inputBasePath = 'C:/traffic'
+trainingFolder = 'C:/traffic/traffic_Data/DATA'
+testingFolder = 'C:/traffic/traffic_Data/TEST'
+classes = pd.read_csv(os.path.join(inputBasePath,'labels.csv'))
+classes_size = len(classes)
+print("Total number of classes: ", classes_size)
+
+traffic_data = []
+training_data = []
+labels = []
+def fetch_images(traffic_data, labels):
+    for classValue in os.listdir(os.path.join(inputBasePath, trainingFolder)):
+        classPath = os.path.join(inputBasePath, trainingFolder, classValue)
+        labels.append(classValue)
+        for trafficSignal in os.listdir(classPath):
+            imgTrafficSignal = Image.open(os.path.join(classPath,trafficSignal))
+            imgTrafficSignal = imgTrafficSignal.convert("L")
+            imgTrafficSignal = imgTrafficSignal.resize((90,90))
+            imgTrafficSignal = np.array(imgTrafficSignal)
+            traffic_data.append((imgTrafficSignal,[int(classValue)]))
+    #training_data = np.array(training_data)
+    labels = np.array(labels)
+    return traffic_data, labels
+
+traffic_data, labels = fetch_images(traffic_data, labels)
+traffic_data_features, traffic_data_labels = zip(*traffic_data)
+training_data_features, validation_data_features, training_data_labels, validation_data_labels = train_test_split(traffic_data_features, traffic_data_labels, test_size=0.33, random_state=42)
+training_data_features = np.array(training_data_features)
+training_data_labels = np.array(training_data_labels)
+validation_data_features = np.array(validation_data_features)
+validation_data_labels = np.array(validation_data_labels)
+print(training_data_features.shape)
+print(training_data_labels.shape)
+
+# Visualizing some of the training data
+# display_images = training_data_features[40:64]
+# display_labels = training_data_labels[40:64]
+def imageDisplayer(data_features, data_labels_act, data_labels_pred=None):
+    rows, cols = 6, 4
+    fig, axes = plt.subplots(rows, cols, figsize=(15, 10))
+
+    plt.subplots_adjust(wspace=0, hspace=0.5) 
+    if data_labels_pred is not None:
+        for row in range(rows):
+            for col in range(cols):
+                i = row * cols + col  # Calculate the index
+                randomVal = random.randint(1,2)
+                # Get the image and label for the current index
+                display_image = data_features[i*randomVal]
+                display_label_act = classes['Name'][data_labels_act[i*randomVal][0]]
+                display_label_pred = classes['Name'][data_labels_pred[i*randomVal]]
+
+                # Display the image
+                axes[row, col].imshow(display_image, cmap='gray') 
+                axes[row, col].set_title((display_label_act, display_label_pred))
+                axes[row, col].axis('off')
+    else:
+        for row in range(rows):
+            for col in range(cols):
+                i = row * cols + col  # Calculate the index
+                randomVal = random.randint(1,2)
+                # Get the image and label for the current index
+                display_image = data_features[i*randomVal]
+                display_label = classes['Name'][data_labels_act[i*randomVal][0]]
+
+                # Display the image
+                axes[row, col].imshow(display_image, cmap='gray') 
+                axes[row, col].set_title(display_label)
+                axes[row, col].axis('off')
+imageDisplayer(training_data_features, training_data_labels)
+
+def convolutionModel():
+    cnnModel = Sequential()
+    cnnModel.add(Conv2D(16,(3,3), padding="same", input_shape=(90, 90, 1), activation='relu'))
+    print(cnnModel(training_data_features).shape)
+    cnnModel.add(MaxPool2D((2,2), strides=None, padding="same"))
+    cnnModel.add(Conv2D(32,(3,3), padding="same", activation='relu'))
+    cnnModel.add(MaxPool2D((2,2), strides=None, padding="same"))
+    cnnModel.add(Conv2D(64,(5,5), padding="same", activation='relu'))
+    cnnModel.add(MaxPool2D((2,2), strides=None, padding="same"))
+    cnnModel.add(Conv2D(128,(7,7), padding="same", activation='relu'))
+    cnnModel.add(MaxPool2D((2,2), strides=None, padding="same"))
+    cnnModel.add(Flatten())
+    cnnModel.add(Dense(232, activation='relu'))
+    cnnModel.add(Dense(116, activation='relu'))
+    cnnModel.add(Dense(58, activation='softmax'))
+    return cnnModel
+
+epochs = 12
+batchSize = 14
+cnnModel = convolutionModel()
+cnnModel.summary()
+
+print(training_data_features.shape, training_data_labels.shape)
+print(training_data_labels)
+
+cnnModel.compile(optimizer='adam', loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
+trafficSignNetwork = cnnModel.fit(training_data_features, training_data_labels, batch_size=batchSize, epochs=epochs, validation_data=(validation_data_features, validation_data_labels))
+
+plt.plot(trafficSignNetwork.history['accuracy'], label='accuracy');
+
+# Evaluating the model on test data
+testing_data = []
+for test_image_file in os.listdir(os.path.join(inputBasePath, testingFolder)):
+    testImage = Image.open(os.path.join(inputBasePath, testingFolder, test_image_file))
+    testImage = testImage.convert("L")
+    testImage = testImage.resize((90,90))
+    testImage = np.array(testImage)
+    testing_data.append((testImage, [int(test_image_file[1:3])]))
+testing_data_features, testing_data_labels = zip(*testing_data)
+testing_data_features = np.array(testing_data_features)
+testing_data_labels = np.array(testing_data_labels)
+
+# Evaluate the test data
+predictions = cnnModel.predict(testing_data_features)
+predicted_labels = np.argmax(predictions, axis=1)
+
+# Visualize Result Data and Actual Data
+print(classes['Name'][predicted_labels])
+print(classes['Name'][testing_data_labels[:,0]])
+plt.imshow(testing_data_features[1])
+
+imageDisplayer(testing_data_features, testing_data_labels, predicted_labels)
+# (Actual Label, Predicted Label)
+
+test_loss, test_acc = cnnModel.evaluate(testing_data_features, testing_data_labels, verbose=2)
+print(test_acc)
